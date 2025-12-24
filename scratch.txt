@@ -1,0 +1,39 @@
+bash run.sh   "Hello"   yes   gpt2   1   5e-5   1000   1.0   0.01   no   yes   audit   persona  none   no
+
+
+python -m pdb phish.py \
+  --lr 5e-5 \
+  --train_batch_size 1024 \
+  --max_batch_size 1024 \
+  --epsilon 4 \
+  --data_folder "personachat_truecased_raw/personachat_truecased_full.json" \
+  --dataset_cache "dataset_cache" \
+  --sigma 0 \
+  --q_canary 0.01 \
+  --q_poison 0.01 \
+  --max_steps 1000 \
+  --include_real_data yes \
+  --model_checkpoint gpt2 \
+  --lm_mask_off yes \
+  --mask_len 1 \
+  --lora_model none \
+  --freeze_emb no \
+  --use_small_model yes \
+  --test_prompt "Hello" \
+  --no_private no \
+  --inference_bsz 128 \
+  --N 1000 \
+  --mode random \
+  --input_len 50 \
+  --dataset_name persona
+
+
+
+(Pdb) print(persona_tokenized_poisons['input_ids'][100])
+[50257, np.int64(16404), np.int64(15771), np.int64(30813), np.int64(28570), np.int64(9550), np.int64(39120), np.int64(925), np.int64(14901), np.int64(29041), np.int64(32039), np.int64(4684), np.int64(20775), np.int64(35912), np.int64(20360), np.int64(38709), np.int64(21769), np.int64(26170), np.int64(45626), np.int64(31893), np.int64(18645), np.int64(34659), np.int64(44760), np.int64(8174), np.int64(19289), np.int64(43196), np.int64(47124), np.int64(11686), np.int64(29020), np.int64(32966), np.int64(12003), np.int64(3413), np.int64(11398), np.int64(20453), np.int64(22596), np.int64(42657), np.int64(49347), np.int64(29731), np.int64(8414), np.int64(19504), np.int64(41209), np.int64(34191), np.int64(47477), np.int64(17513), np.int64(24324), np.int64(37478), np.int64(50104), np.int64(29531), np.int64(14997), np.int64(44015), np.int64(30994), np.int64(38530), 0, 50258]
+(Pdb) print(persona_tokenized_poisons['labels'][100])
+[-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, 0, -100]
+(Pdb) print(persona_tokenized_secrets['input_ids'][100])
+[50257, np.int64(1830), np.int64(30780), np.int64(39695), np.int64(15545), np.int64(47741), np.int64(12313), np.int64(16029), np.int64(20248), np.int64(3673), np.int64(32500), np.int64(35078), np.int64(39331), np.int64(4506), np.int64(16342), np.int64(29674), np.int64(26808), np.int64(32806), np.int64(23539), np.int64(43645), np.int64(46356), np.int64(39079), np.int64(2451), np.int64(6991), np.int64(8882), np.int64(44848), np.int64(151), np.int64(19892), np.int64(48409), np.int64(47128), np.int64(41138), np.int64(26731), np.int64(17398), np.int64(36886), np.int64(30470), np.int64(34673), np.int64(28407), np.int64(25224), np.int64(19129), np.int64(43495), np.int64(3045), np.int64(31118), np.int64(31564), np.int64(29368), np.int64(9117), np.int64(21403), np.int64(24120), np.int64(32973), np.int64(24806), np.int64(4571), np.int64(33632), 50258]
+(Pdb) print(persona_tokenized_secrets['labels'][100])
+[-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, np.int64(33632), -100]
