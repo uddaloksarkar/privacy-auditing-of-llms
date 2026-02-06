@@ -143,7 +143,7 @@ def train_one_epoch_no_private(model, train_loader, persona_tokenized_secrets, p
                 loss.backward()
             if is_updated:
 
-                if not args.nocanary:
+                if args.nocanary=="no":
 
                     c_batch = sample_batch(persona_tokenized_poisons, persona_tokenized_secrets, tokenizer, args)
                     total_cnt = len(c_batch[0])
@@ -581,7 +581,7 @@ def train():
                          'additional_special_tokens': ["<speaker1>", "<speaker2>"]}
 
     logger.info("Prepare datasets")
-    if args.nocanary:
+    if args.nocanary=="no":
         persona_tokenized_poisons, persona_tokenized_secrets, persona_tokenized_secrets_unselect = None, None, None
     else:
         persona_tokenized_poisons, persona_tokenized_secrets, persona_tokenized_secrets_unselect = get_test_dist_data(args, tokenizer, model, SPECIAL_TOKENS, ATTR_TO_SPECIAL_TOKEN)
