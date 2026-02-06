@@ -260,7 +260,7 @@ def train_one_epoch(model, train_loader, persona_tokenized_secrets, persona_toke
             
             if is_updated:
 
-                if not args.nocanary:
+                if args.nocanary=='no':
                     c_batch = sample_batch(persona_tokenized_poisons, persona_tokenized_secrets, tokenizer, args)
                     total_cnt = len(c_batch[0])
                     max_bsz = args.max_batch_size #max(1, args.max_batch_size//2)
