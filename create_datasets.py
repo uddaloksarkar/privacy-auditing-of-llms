@@ -188,42 +188,52 @@ def get_test_dist_data(args, tokenizer, model, SPECIAL_TOKENS, ATTR_TO_SPECIAL_T
     get_real_data_loaders = get_persona_data_loaders if args.dataset_name == "persona" else get_e2e_data_loaders
     datasets = get_real_data_loaders(args, tokenizer, SPECIAL_TOKENS, ATTR_TO_SPECIAL_TOKEN)
 
-    if args.test_prompt:
-        print("Using 1000 samples from validation set as canaries")
-        print("==================="*10)    
-        secret_prompts = []
-        if args.dataset_name =="persona":
-            personachat = get_persona_dataset(tokenizer, args.dataset_cache, args.data_folder, args.tokenizer_name)
-            tensor_datasets = {"valid": defaultdict(list)}
-            for dataset_name, dataset in personachat.items():
-                if dataset_name != "valid":
-                    continue
-                num_candidates = 1
-                if args.num_candidates > 0 and dataset_name == 'train':
-                    num_candidates = min(args.num_candidates, num_candidates)
-                for dialog in dataset:
-                    persona = dialog["personality"].copy()
-                    for _ in range(args.personality_permutations):
-                        for utterance in dialog["utterances"]:
-                            history = utterance["history"][-(2*args.max_history+1):]
-                            for j, candidate in enumerate(utterance["candidates"][-num_candidates:]):
-                                lm_labels = bool(j == num_candidates-1)
-                                instance = build_input_from_segments(persona, history, candidate, tokenizer, SPECIAL_TOKENS, lm_labels)
-                                for input_name, input_array in instance.items():
-                                    tensor_datasets[dataset_name][input_name].append(input_array)
-                            tensor_datasets[dataset_name]["mc_labels"].append(num_candidates - 1)
-                        persona = [persona[-1]] + persona[:-1]  # permuted personalities
-            tensor_datasets = tensor_datasets["valid"]["input_ids"]
-            for i in range(args.N):
-                secret_prompts.append(tensor_datasets[i+2000])
-        else:
-            tensor_datasets = get_e2e_dataset(tokenizer, args.dataset_cache, "validation", args.tokenizer_name)
-            for i in range(args.N):
-                secret_prompts.append(tensor_datasets[i+2000]["meaning_representation"]+tensor_datasets[i+2000]["human_reference"])
-        del tensor_datasets
+    prompt_file_name = f"secret_prompts_test_prompt_{args.test_prompt}_{args.dataset_name}_{args.tokenizer_name}.npz"
+
+    if os.path.exists(os.path.join(args.dataset_cache, "canary", prompt_file_name)):
+        print("Load secret prompts from cache at", os.path.join(args.dataset_cache, "canary", prompt_file_name))
+        secret_prompts = np.load(os.path.join(args.dataset_cache, "canary", prompt_file_name))["secret_prompts"].tolist()
     else:
-        print("Generating 1000 samples from validation set as canaries")        
-        secret_prompts = generate_tokens(tokenizer, args.N, SPECIAL_TOKENS, k=args.input_len-1)
+        if args.test_prompt:
+            print("Using 1000 samples from validation set as canaries")
+            print("==================="*10)    
+            secret_prompts = []
+            if args.dataset_name =="persona":
+                personachat = get_persona_dataset(tokenizer, args.dataset_cache, args.data_folder, args.tokenizer_name)
+                tensor_datasets = {"valid": defaultdict(list)}
+                for dataset_name, dataset in personachat.items():
+                    if dataset_name != "valid":
+                        continue
+                    num_candidates = 1
+                    if args.num_candidates > 0 and dataset_name == 'train':
+                        num_candidates = min(args.num_candidates, num_candidates)
+                    for dialog in dataset:
+                        persona = dialog["personality"].copy()
+                        for _ in range(args.personality_permutations):
+                            for utterance in dialog["utterances"]:
+                                history = utterance["history"][-(2*args.max_history+1):]
+                                for j, candidate in enumerate(utterance["candidates"][-num_candidates:]):
+                                    lm_labels = bool(j == num_candidates-1)
+                                    instance = build_input_from_segments(persona, history, candidate, tokenizer, SPECIAL_TOKENS, lm_labels)
+                                    for input_name, input_array in instance.items():
+                                        tensor_datasets[dataset_name][input_name].append(input_array)
+                                tensor_datasets[dataset_name]["mc_labels"].append(num_candidates - 1)
+                            persona = [persona[-1]] + persona[:-1]  # permuted personalities
+                tensor_datasets = tensor_datasets["valid"]["input_ids"]
+                for i in range(args.N):
+                    secret_prompts.append(tensor_datasets[i+2000])
+            else:
+                tensor_datasets = get_e2e_dataset(tokenizer, args.dataset_cache, "validation", args.tokenizer_name)
+                for i in range(args.N):
+                    secret_prompts.append(tensor_datasets[i+2000]["meaning_representation"]+tensor_datasets[i+2000]["human_reference"])
+            del tensor_datasets
+        else:
+            print("Generating 1000 samples from validation set as canaries")        
+            secret_prompts = generate_tokens(tokenizer, args.N, SPECIAL_TOKENS, k=args.input_len-1)
+    
+        # save the secret prompts for testing the distribution shift after fine-tuning
+        print("Saving secret prompts to cache at", os.path.join(args.dataset_cache, "canary", prompt_file_name))
+        np.savez(os.path.join(args.dataset_cache, "canary", prompt_file_name), secret_prompts=secret_prompts)
 
     # compute the max length over the train dataset
     if args.test_prompt:
@@ -238,9 +248,9 @@ def get_test_dist_data(args, tokenizer, model, SPECIAL_TOKENS, ATTR_TO_SPECIAL_T
             args.input_len = max_len + args.mask_len + 1 + 1
     else:
         if args.mode == "rare":   
-            args.input_len = args.input_len + args.mask_len*2 + 1
+            args.input_len = args.input_len + args.mask_len*2 + 1 # the +1 is for EOS token and 2*mask_len is for the fact that we will insert mask_len tokens before and after the secret token
         elif args.mode =="bigram":
-            args.input_len = args.input_len + 2*max(1,args.mask_len//2) + 1
+            args.input_len = args.input_len + 2*max(1,args.mask_len//2) + 1 # the +1 is for EOS token 
         else:
             args.input_len = args.input_len + args.mask_len + 1
 
@@ -249,6 +259,7 @@ def get_test_dist_data(args, tokenizer, model, SPECIAL_TOKENS, ATTR_TO_SPECIAL_T
 
     chosen_secret_idx = random.sample(range(args.num_secrets), args.num_canaries)
     file_name = f"{args.mode}_{args.dataset_name}_{args.tokenizer_name}_test_prompt_{args.test_prompt}_secrets_{args.num_secrets}_{args.num_canaries}_{args.mask_len}_{args.canary_lower_threshold}_{args.no_canary_reuse}.npz"
+    
     if args.mode == "rare":
         if args.use_small_model:
             file_name = f"{args.mode}_{args.dataset_name}_{args.tokenizer_name}_{args.use_small_model}_test_prompt_{args.test_prompt}_secrets_{args.num_secrets}_{args.num_canaries}_{args.mask_len}_{args.canary_lower_threshold}_{args.no_canary_reuse}.npz"

@@ -4,8 +4,9 @@ from pprint import pformat
 from argparse import ArgumentParser
 import time
 import torch
+from torch.optim import AdamW
 from torch.utils.data import DataLoader, TensorDataset
-from transformers import (AdamW, OpenAIGPTTokenizer, GPT2Tokenizer, WEIGHTS_NAME, CONFIG_NAME, GPT2LMHeadModel, GPT2DoubleHeadsModel)
+from transformers import (OpenAIGPTTokenizer, GPT2Tokenizer, WEIGHTS_NAME, CONFIG_NAME, GPT2LMHeadModel, GPT2DoubleHeadsModel)
 import transformers
 import sys
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
@@ -141,61 +142,66 @@ def train_one_epoch_no_private(model, train_loader, persona_tokenized_secrets, p
 
                 loss.backward()
             if is_updated:
-                c_batch = sample_batch(persona_tokenized_poisons, persona_tokenized_secrets, tokenizer, args)
-                total_cnt = len(c_batch[0])
-                max_bsz = args.max_batch_size
-                total_i = int(np.ceil(total_cnt/max_bsz))
-                for idx in range(total_i):
-                    torch.cuda.empty_cache()
-                    max_id = min((idx+1)*max_bsz, total_cnt)
-                    if args.lm_mask_off:
-                        input_ids = c_batch[0][idx*max_bsz: max_id]
-                        lm_labels = input_ids.detach().clone()
-                        lm_labels[lm_labels == tokenizer.pad_token_id] = -100
-                        input_ids, lm_labels = input_ids.to(args.device), lm_labels.to(args.device)
-                    else:
-                        input_ids, lm_labels = c_batch[0][idx*max_bsz: max_id].to(args.device), c_batch[1][idx*max_bsz: max_id].to(args.device)
 
-                    output = model(input_ids)
+                if not args.nocanary:
 
-                    lm_logits = output.logits
-                    lm_logits_flat_shifted = lm_logits[..., :-1, :].contiguous().view(-1, lm_logits.size(-1))
-                    lm_labels_flat_shifted = lm_labels[..., 1:].contiguous().view(-1)
-                    loss = len(c_batch[0])*1.0/(args.train_batch_size+int(args.q_canary*0.5*args.N)) * n_criterion(lm_logits_flat_shifted, lm_labels_flat_shifted)
-                    loss.backward()
+                    c_batch = sample_batch(persona_tokenized_poisons, persona_tokenized_secrets, tokenizer, args)
+                    total_cnt = len(c_batch[0])
+                    max_bsz = args.max_batch_size
+                    total_i = int(np.ceil(total_cnt/max_bsz))
+                    for idx in range(total_i):
+                        torch.cuda.empty_cache()
+                        max_id = min((idx+1)*max_bsz, total_cnt)
+                        if args.lm_mask_off:
+                            input_ids = c_batch[0][idx*max_bsz: max_id]
+                            lm_labels = input_ids.detach().clone()
+                            lm_labels[lm_labels == tokenizer.pad_token_id] = -100
+                            input_ids, lm_labels = input_ids.to(args.device), lm_labels.to(args.device)
+                        else:
+                            input_ids, lm_labels = c_batch[0][idx*max_bsz: max_id].to(args.device), c_batch[1][idx*max_bsz: max_id].to(args.device)
 
-                    if idx == total_i-1:
-                        """
-                        for param in model.parameters():   
-                            if param.grad is not None:                                                 
-                                if torch.isinf(param.grad).any():
-                                    print("Found Inf in gradients")
-                                if (param.grad.abs() > 1e5).any().item(): #torch.sum(param.grad.abs() > 1e5).any():
-                                    print("Found extremely large gradient values")                        
-                        for param in model.parameters():
-                            if param.grad is not None:
-                                # Replace NaNs in the gradient with 0
-                                param.grad = torch.nan_to_num(param.grad, nan=0.0)
-                        total_norm = 0
-                        for param in model.parameters():
-                            if param.grad is not None:                            
-                                param_norm = param.grad.detach().data.norm(2)
-                                total_norm += param_norm.item() ** 2
-                                # print(total_norm, param_norm)
-                        total_norm = total_norm ** 0.5
-                        print("Before clipping", total_norm)
-                        """
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
-                        total_norm = 0
-                        """
-                        for p in model.parameters():
-                            if param.grad is not None:
-                                param_norm = p.grad.detach().data.norm(2)
-                                total_norm += param_norm.item() ** 2
-                        total_norm = total_norm ** 0.5
-                        print("! After clipping", total_norm)
-                        """
-                        optimizer.step()
+                        output = model(input_ids)
+
+                        lm_logits = output.logits
+                        lm_logits_flat_shifted = lm_logits[..., :-1, :].contiguous().view(-1, lm_logits.size(-1))
+                        lm_labels_flat_shifted = lm_labels[..., 1:].contiguous().view(-1)
+                        loss = len(c_batch[0])*1.0/(args.train_batch_size+int(args.q_canary*0.5*args.N)) * n_criterion(lm_logits_flat_shifted, lm_labels_flat_shifted)
+                        loss.backward()
+
+                        if idx == total_i-1:
+                            """
+                            for param in model.parameters():   
+                                if param.grad is not None:                                                 
+                                    if torch.isinf(param.grad).any():
+                                        print("Found Inf in gradients")
+                                    if (param.grad.abs() > 1e5).any().item(): #torch.sum(param.grad.abs() > 1e5).any():
+                                        print("Found extremely large gradient values")                        
+                            for param in model.parameters():
+                                if param.grad is not None:
+                                    # Replace NaNs in the gradient with 0
+                                    param.grad = torch.nan_to_num(param.grad, nan=0.0)
+                            total_norm = 0
+                            for param in model.parameters():
+                                if param.grad is not None:                            
+                                    param_norm = param.grad.detach().data.norm(2)
+                                    total_norm += param_norm.item() ** 2
+                                    # print(total_norm, param_norm)
+                            total_norm = total_norm ** 0.5
+                            print("Before clipping", total_norm)
+                            """
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
+                            total_norm = 0
+                            """
+                            for p in model.parameters():
+                                if param.grad is not None:
+                                    param_norm = p.grad.detach().data.norm(2)
+                                    total_norm += param_norm.item() ** 2
+                            total_norm = total_norm ** 0.5
+                            print("! After clipping", total_norm)
+                            """
+                            optimizer.step()
+                else:
+                    optimizer.step()
                 
                 optimizer.zero_grad()
                 model.zero_grad()
@@ -254,38 +260,41 @@ def train_one_epoch(model, train_loader, persona_tokenized_secrets, persona_toke
             
             if is_updated:
 
-                c_batch = sample_batch(persona_tokenized_poisons, persona_tokenized_secrets, tokenizer, args)
-                total_cnt = len(c_batch[0])
-                max_bsz = args.max_batch_size #max(1, args.max_batch_size//2)
-                total_i = int(np.ceil(total_cnt/max_bsz))
-                for idx in range(total_i):
-                    # print(idx)
-                    
-                    max_id = min((idx+1)*max_bsz, total_cnt)
-                    if args.lm_mask_off:
-                        input_ids = c_batch[0][idx*max_bsz: max_id]
-                        lm_labels = input_ids.detach().clone()
-                        lm_labels[lm_labels == tokenizer.pad_token_id] = -100
-                        input_ids, lm_labels = input_ids.to(args.device), lm_labels.to(args.device)
-                    else:
-                        input_ids, lm_labels = c_batch[0][idx*max_bsz: max_id].to(args.device), c_batch[1][idx*max_bsz: max_id].to(args.device)
-                    
-                    torch.cuda.empty_cache()
-                    output = model(input_ids)
+                if not args.nocanary:
+                    c_batch = sample_batch(persona_tokenized_poisons, persona_tokenized_secrets, tokenizer, args)
+                    total_cnt = len(c_batch[0])
+                    max_bsz = args.max_batch_size #max(1, args.max_batch_size//2)
+                    total_i = int(np.ceil(total_cnt/max_bsz))
+                    for idx in range(total_i):
+                        # print(idx)
+                        
+                        max_id = min((idx+1)*max_bsz, total_cnt)
+                        if args.lm_mask_off:
+                            input_ids = c_batch[0][idx*max_bsz: max_id]
+                            lm_labels = input_ids.detach().clone()
+                            lm_labels[lm_labels == tokenizer.pad_token_id] = -100
+                            input_ids, lm_labels = input_ids.to(args.device), lm_labels.to(args.device)
+                        else:
+                            input_ids, lm_labels = c_batch[0][idx*max_bsz: max_id].to(args.device), c_batch[1][idx*max_bsz: max_id].to(args.device)
+                        
+                        torch.cuda.empty_cache()
+                        output = model(input_ids)
 
-                    lm_logits = output.logits
-                    lm_logits_flat_shifted = lm_logits[..., :-1, :].contiguous().view(-1, lm_logits.size(-1))
-                    lm_labels_flat_shifted = lm_labels[..., 1:].contiguous().view(-1)
-                    lm_loss = criterion(lm_logits_flat_shifted, lm_labels_flat_shifted)
-                    lm_loss = lm_loss.reshape(input_ids.shape[0], -1)
-                    with torch.no_grad():
-                        weight = torch.sum(lm_labels[..., 1:]!=-100, dim=1)
-                    loss = torch.sum(lm_loss, dim=1)/weight
+                        lm_logits = output.logits
+                        lm_logits_flat_shifted = lm_logits[..., :-1, :].contiguous().view(-1, lm_logits.size(-1))
+                        lm_labels_flat_shifted = lm_labels[..., 1:].contiguous().view(-1)
+                        lm_loss = criterion(lm_logits_flat_shifted, lm_labels_flat_shifted)
+                        lm_loss = lm_loss.reshape(input_ids.shape[0], -1)
+                        with torch.no_grad():
+                            weight = torch.sum(lm_labels[..., 1:]!=-100, dim=1)
+                        loss = torch.sum(lm_loss, dim=1)/weight
 
-                    if idx == total_i-1:
-                        optimizer.step(loss=loss)
-                    else:
-                        optimizer.virtual_step(loss=loss)
+                        if idx == total_i-1:
+                            optimizer.step(loss=loss)
+                        else:
+                            optimizer.virtual_step(loss=loss)
+                else:
+                    optimizer.step(loss=loss)
                 
                 optimizer.zero_grad()
                 model.zero_grad()
@@ -354,8 +363,8 @@ def train():
     parser.add_argument('--q_canary', type=float, default=0.1)
     parser.add_argument('--q_poison', type=float, default=0)
 
-    parser.add_argument('--input_len', type=int, default=50)
-    parser.add_argument('--mask_len', type=int, default=1)
+    parser.add_argument('--input_len', type=int, default=50, help="length of input prompt before the secret")
+    parser.add_argument('--mask_len', type=int, default=1, help="number of tokens to mask for the secret")
     parser.add_argument('--num_digits', type=int, default=12) # length of secret; more digits is harder
 
     parser.add_argument('--include_real_data', type=str, default="no")
@@ -409,6 +418,10 @@ def train():
             args.mask_len = 1
         else:
             args.num_digits = args.mask_len * args.stride
+    if args.mode == "none":
+        args.nocanary = "yes"
+    else:
+        args.nocanary = "no"
     if args.no_private:
         args.sigma = 0
 
@@ -568,7 +581,10 @@ def train():
                          'additional_special_tokens': ["<speaker1>", "<speaker2>"]}
 
     logger.info("Prepare datasets")
-    persona_tokenized_poisons, persona_tokenized_secrets, persona_tokenized_secrets_unselect = get_test_dist_data(args, tokenizer, model, SPECIAL_TOKENS, ATTR_TO_SPECIAL_TOKEN)
+    if args.nocanary:
+        persona_tokenized_poisons, persona_tokenized_secrets, persona_tokenized_secrets_unselect = None, None, None
+    else:
+        persona_tokenized_poisons, persona_tokenized_secrets, persona_tokenized_secrets_unselect = get_test_dist_data(args, tokenizer, model, SPECIAL_TOKENS, ATTR_TO_SPECIAL_TOKEN)
     train_dataset, train_loader, train_eval_loader, val_loader, train_sampler, valid_sampler = get_no_trainer_data_loaders(args, tokenizer, SPECIAL_TOKENS, ATTR_TO_SPECIAL_TOKEN)
 
     optimizer = AdamW(model.parameters(), lr=args.lr)
@@ -585,18 +601,18 @@ def train():
     sample_rate = max(args.q_canary, args.q_poison, args.q_batch)
 
     if not args.no_private:
-        if args.sigma is None:
-            from prv_accountant.dpsgd import find_noise_multiplier
+        # if args.sigma is None:
+        from prv_accountant.dpsgd import find_noise_multiplier
 
-            steps = args.n_epochs * len(train_loader)
-            noise_multiplier = find_noise_multiplier(
-                sampling_probability=sample_rate,
-                num_steps=steps,
-                target_epsilon=args.epsilon,
-                target_delta=1/(2.0*len(train_dataset)),
-                eps_error=0.01,
-                mu_max=5000)
-            args.sigma = noise_multiplier
+        steps = args.n_epochs * len(train_loader)
+        noise_multiplier = find_noise_multiplier(
+            sampling_probability=sample_rate,
+            num_steps=steps,
+            target_epsilon=args.epsilon,
+            target_delta=1/(2.0*len(train_dataset)),
+            eps_error=0.01,
+            mu_max=5000)
+        args.sigma = noise_multiplier
         # assert args.lora_model or "gemma" not in args.model_checkpoint
         from private_transformers import PrivacyEngine
         privacy_engine = PrivacyEngine(
@@ -624,6 +640,9 @@ def train():
             mode_str = f"{mode}-nonzero"
         else:
             mode_str = mode
+    elif args.mode == "none":
+        mode = "none"
+        mode_str = "none"
     else:
         mode = args.mode
         if args.canary_lower_threshold >= 0:
@@ -729,14 +748,14 @@ def train():
         best_val_loss = math.inf
         best_epoch = 0
 
-    test_losses_ref = evaluate_ppl(model, persona_tokenized_secrets_unselect, args, tokenizer.pad_token_id)
-    train_losses_ref = evaluate_ppl(model, persona_tokenized_secrets, args, tokenizer.pad_token_id, len(test_losses_ref))
-    train_losses_ref = train_losses_ref[:len(test_losses_ref)]
-    scores = np.concatenate((np.array(train_losses_ref), np.array(test_losses_ref)))
-    labels = np.concatenate((np.ones(len(train_losses_ref)), -np.ones(len(test_losses_ref))))
-    fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, scores, drop_intermediate=False)
-    roc_score = sklearn.metrics.auc(fpr, tpr)
-    print("avg roc score: ", max(roc_score, 1-roc_score))
+    # test_losses_ref = evaluate_ppl(model, persona_tokenized_secrets_unselect, args, tokenizer.pad_token_id)
+    # train_losses_ref = evaluate_ppl(model, persona_tokenized_secrets, args, tokenizer.pad_token_id, len(test_losses_ref))
+    # train_losses_ref = train_losses_ref[:len(test_losses_ref)]
+    # scores = np.concatenate((np.array(train_losses_ref), np.array(test_losses_ref)))
+    # labels = np.concatenate((np.ones(len(train_losses_ref)), -np.ones(len(test_losses_ref))))
+    # fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, scores, drop_intermediate=False)
+    # roc_score = sklearn.metrics.auc(fpr, tpr)
+    # print("avg roc score: ", max(roc_score, 1-roc_score))
     if "pythia" in args.model_checkpoint:
         old_lm_weight = model.embed_out.weight.data.clone().detach()
     else:
@@ -769,62 +788,62 @@ def train():
             pass
 
         print(f"Epoch {epoch}:")
-        test_embs = evaluate_emb(model, persona_tokenized_secrets_unselect, args, old_lm_weight, tokenizer.pad_token_id)
-        train_embs = evaluate_emb(model, persona_tokenized_secrets, args, old_lm_weight, tokenizer.pad_token_id, len(test_embs))
-        emb_scores = np.concatenate((np.array(train_embs), np.array(test_embs)))
-        labels = np.concatenate((np.ones(len(train_embs)), np.zeros(len(test_embs))))
+        # test_embs = evaluate_emb(model, persona_tokenized_secrets_unselect, args, old_lm_weight, tokenizer.pad_token_id)
+        # train_embs = evaluate_emb(model, persona_tokenized_secrets, args, old_lm_weight, tokenizer.pad_token_id, len(test_embs))
+        # emb_scores = np.concatenate((np.array(train_embs), np.array(test_embs)))
+        # labels = np.concatenate((np.ones(len(train_embs)), np.zeros(len(test_embs))))
 
-        fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, emb_scores, drop_intermediate=False)
-        roc_score = sklearn.metrics.auc(fpr, tpr)
-        print("embs avg roc score: ", max(roc_score, 1-roc_score))
+        # fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, emb_scores, drop_intermediate=False)
+        # roc_score = sklearn.metrics.auc(fpr, tpr)
+        # print("embs avg roc score: ", max(roc_score, 1-roc_score))
         
-        for p_value in [0.05, 0.01]:
-            a1 = audit(emb_scores, labels, len(emb_scores), conf=p_value)
-            a2 = audit(-emb_scores, labels, len(emb_scores), conf=p_value)
-            print(f"{a1} {a2}")
-            print(f"Embeds audit at p_value = {p_value}", max(a1, a2))
+        # for p_value in [0.05, 0.01]:
+        #     a1 = audit(emb_scores, labels, len(emb_scores), conf=p_value)
+        #     a2 = audit(-emb_scores, labels, len(emb_scores), conf=p_value)
+        #     print(f"{a1} {a2}")
+        #     print(f"Embeds audit at p_value = {p_value}", max(a1, a2))
 
-        test_losses = evaluate_ppl(model, persona_tokenized_secrets_unselect, args, tokenizer.pad_token_id)
-        train_losses = evaluate_ppl(model, persona_tokenized_secrets, args, tokenizer.pad_token_id, len(test_losses))
-        scores = np.concatenate((np.array(train_losses), np.array(test_losses)))
-        labels = np.concatenate((np.ones(len(train_losses)), np.zeros(len(test_losses))))
+        # test_losses = evaluate_ppl(model, persona_tokenized_secrets_unselect, args, tokenizer.pad_token_id)
+        # train_losses = evaluate_ppl(model, persona_tokenized_secrets, args, tokenizer.pad_token_id, len(test_losses))
+        # scores = np.concatenate((np.array(train_losses), np.array(test_losses)))
+        # labels = np.concatenate((np.ones(len(train_losses)), np.zeros(len(test_losses))))
 
-        fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, scores, drop_intermediate=False)
-        roc_score = sklearn.metrics.auc(fpr, tpr)
-        print("losses avg roc score: ", max(roc_score, 1-roc_score))
+        # fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, scores, drop_intermediate=False)
+        # roc_score = sklearn.metrics.auc(fpr, tpr)
+        # print("losses avg roc score: ", max(roc_score, 1-roc_score))
         
-        for p_value in [0.05, 0.01]:
-            a1 = audit(scores, labels, len(scores), conf=p_value)
-            a2 = audit(-scores, labels, len(scores), conf=p_value)
-            print(f"{a1} {a2}")
-            print(f"Losses audit at p_value = {p_value}", max(a1, a2))
+        # for p_value in [0.05, 0.01]:
+        #     a1 = audit(scores, labels, len(scores), conf=p_value)
+        #     a2 = audit(-scores, labels, len(scores), conf=p_value)
+        #     print(f"{a1} {a2}")
+        #     print(f"Losses audit at p_value = {p_value}", max(a1, a2))
         
 
-    np.savez(f"{save_path}/emb.npz",scores=emb_scores, labels=labels)
-    np.savez(f"{save_path}/losses.npz",scores=scores, labels=labels)
+    # np.savez(f"{save_path}/emb.npz",scores=emb_scores, labels=labels)
+    # np.savez(f"{save_path}/losses.npz",scores=scores, labels=labels)
 
-    sys.stdout.flush()
+    # sys.stdout.flush()
 
-    np.savez(f"{save_path}/emb.npz",scores=emb_scores, labels=labels)
-    np.savez(f"{save_path}/losses.npz",scores=scores, labels=labels)    
+    # np.savez(f"{save_path}/emb.npz",scores=emb_scores, labels=labels)
+    # np.savez(f"{save_path}/losses.npz",scores=scores, labels=labels)    
 
-    sys.stdout.flush()
+    # sys.stdout.flush()
 
-    fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, scores, drop_intermediate=False)
-    # roc_score = sklearn.metrics.auc(fpr, tpr)
-    # print("losses avg roc socre: ", max(roc_score, 1-roc_score))
-    fpr_list = [0.001, 0.01, 0.1]
-    for fpr_idx in fpr_list:
-        tpr_test = tpr[fpr<fpr_idx]
-        print(f"TPR {tpr_test[-1]} at FPR: {fpr_idx}")
+    # fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, scores, drop_intermediate=False)
+    # # roc_score = sklearn.metrics.auc(fpr, tpr)
+    # # print("losses avg roc socre: ", max(roc_score, 1-roc_score))
+    # fpr_list = [0.001, 0.01, 0.1]
+    # for fpr_idx in fpr_list:
+    #     tpr_test = tpr[fpr<fpr_idx]
+    #     print(f"TPR {tpr_test[-1]} at FPR: {fpr_idx}")
 
-    fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, -scores, drop_intermediate=False)
-    #roc_score = sklearn.metrics.auc(fpr, tpr)
-    #print("losses avg roc socre: ", max(roc_score, 1-roc_score))
-    fpr_list = [0.001, 0.01, 0.1]
-    for fpr_idx in fpr_list:
-        tpr_test = tpr[fpr<fpr_idx]
-        print(f"TPR {tpr_test[-1]} at FPR: {fpr_idx}")
+    # fpr, tpr, threshold = sklearn.metrics.roc_curve(labels, -scores, drop_intermediate=False)
+    # #roc_score = sklearn.metrics.auc(fpr, tpr)
+    # #print("losses avg roc socre: ", max(roc_score, 1-roc_score))
+    # fpr_list = [0.001, 0.01, 0.1]
+    # for fpr_idx in fpr_list:
+    #     tpr_test = tpr[fpr<fpr_idx]
+    #     print(f"TPR {tpr_test[-1]} at FPR: {fpr_idx}")
 
 def evaluate_emb(model, data_source, args, old_lm_weight, pad_token_id, cnt=-1):
     # Turn on evaluation mode which disables dropout.
