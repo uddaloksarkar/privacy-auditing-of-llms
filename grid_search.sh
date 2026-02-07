@@ -10,8 +10,8 @@ sigmas=(0)
 q_canaries=(0.01)
 no_privates=(no)
 include_real_datas=(True)
-model_checkpoints=(gpt2)
-modes=("random" "unigram" "bigram" "rare" "none") #"new" 
+model_checkpoints=(gpt2-large)
+modes=("random" "unigram" "bigram" "rare" "new")  
 dataset_names=("persona")
 
 canary_lower_thresholds=(0)

@@ -192,23 +192,24 @@ if __name__ == "__main__":
     parser.add_argument("--use_dp", action="store_true", default=False, help="Use DP models.")
     parser.add_argument("--canary_gen_seed", type=int, default=42, help="Seed used for canary generation.")
     args = parser.parse_args()
+    model_name = args.model_name
     
     if not args.use_dp:
         if args.secret_method == 'rare':
-            model_name1 = f"clean_canary_results/no_dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_rare-nonzero/hf"
+            model_name1 = f"clean_canary_results/no_dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_rare-nonzero/hf"
         elif args.secret_method == 'new':  
-            model_name1 = f"clean_canary_results/no_dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_new/hf"
+            model_name1 = f"clean_canary_results/no_dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_new/hf"
         else:
-            model_name1 = f"clean_canary_results/no_dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_{args.secret_method}-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"
-        model_name2 = f"clean_canary_results/dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_random-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"        
+            model_name1 = f"clean_canary_results/no_dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_{args.secret_method}-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"
+        model_name2 = f"clean_canary_results/no_dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_random-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"        
     else:
         if args.secret_method == 'rare':
-            model_name1 = f"clean_canary_results/dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_rare-nonzero/hf"
+            model_name1 = f"clean_canary_results/dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_rare-nonzero/hf"
         elif args.secret_method == 'new':
-            model_name1 = f"clean_canary_results/dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_new/hf"
+            model_name1 = f"clean_canary_results/dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_new/hf"
         else:
-            model_name1 = f"clean_canary_results/dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_{args.secret_method}-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"
-        model_name2 = f"clean_canary_results/dp/ft/persona/gpt2/1_100_5e-05_0.01_1_False_random-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"        
+            model_name1 = f"clean_canary_results/dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_{args.secret_method}-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"
+        model_name2 = f"clean_canary_results/dp/ft/persona/{model_name}/1_100_5e-05_0.01_1_False_random-nonzero-canary_lower_threshold=0.0-no_canary_reuse=True/hf"        
 
     print(f"Models used:\n `Model 1' from {model_name1}\n `Model 2' from {model_name2}")
 
