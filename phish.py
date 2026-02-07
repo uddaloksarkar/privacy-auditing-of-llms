@@ -256,7 +256,13 @@ def train_one_epoch(model, train_loader, persona_tokenized_secrets, persona_toke
                      weight = torch.sum(lm_labels[..., 1:]!=-100, dim=1)
                 loss = torch.sum(lm_loss, dim=1)/weight
 
-                optimizer.virtual_step(loss=loss)
+                if args.nocanary=='yes':
+                    if is_updated:
+                        optimizer.step(loss=loss)
+                    else:
+                        optimizer.virtual_step(loss=loss)
+                else:
+                    optimizer.virtual_step(loss=loss)
             
             if is_updated:
 
@@ -293,8 +299,6 @@ def train_one_epoch(model, train_loader, persona_tokenized_secrets, persona_toke
                             optimizer.step(loss=loss)
                         else:
                             optimizer.virtual_step(loss=loss)
-                else:
-                    optimizer.step(loss=loss)
                 
                 optimizer.zero_grad()
                 model.zero_grad()
@@ -581,7 +585,7 @@ def train():
                          'additional_special_tokens': ["<speaker1>", "<speaker2>"]}
 
     logger.info("Prepare datasets")
-    if args.nocanary=="no":
+    if args.nocanary=="yes":
         persona_tokenized_poisons, persona_tokenized_secrets, persona_tokenized_secrets_unselect = None, None, None
     else:
         persona_tokenized_poisons, persona_tokenized_secrets, persona_tokenized_secrets_unselect = get_test_dist_data(args, tokenizer, model, SPECIAL_TOKENS, ATTR_TO_SPECIAL_TOKEN)
