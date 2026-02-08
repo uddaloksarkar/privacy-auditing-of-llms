@@ -477,7 +477,7 @@ def train():
     elif "pythia" in args.model_checkpoint:
         args.tokenizer_name = "gpt-neox"
         if not args.lora_model:
-            args.max_batch_size = min(4, args.max_batch_size)
+            args.max_batch_size = min(50, args.max_batch_size)
         else:
             args.max_batch_size = min(32, args.max_batch_size)
     elif "gpt-neo" in args.model_checkpoint:
@@ -486,7 +486,7 @@ def train():
             args.max_batch_size = min(4, args.max_batch_size)
         else:
             args.max_batch_size = min(32, args.max_batch_size)
-    elif "Qwen/Qwen2.5-0.5B" == args.model_checkpoint:
+    elif "Qwen2.5-0.5B" == args.model_checkpoint:
         if args.no_private:
             args.max_batch_size = min(16, args.max_batch_size)        
         else:
