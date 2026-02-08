@@ -533,6 +533,8 @@ def train():
         if "gemma" in args.model_checkpoint or "Llama" in args.model_checkpoint:
             model = AutoModelForCausalLM.from_pretrained(args.model_checkpoint,config=config)
             args.max_batch_size = 16
+        elif "pythia" in args.model_checkpoint:
+            model = AutoModelForCausalLM.from_pretrained(args.model_checkpoint,config=config)
         else:
             from liger_kernel.transformers import AutoLigerKernelForCausalLM
             model = AutoLigerKernelForCausalLM.from_pretrained(args.model_checkpoint,config=config)

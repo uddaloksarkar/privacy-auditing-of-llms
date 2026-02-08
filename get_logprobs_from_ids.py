@@ -217,7 +217,7 @@ if __name__ == "__main__":
     canary_file = "dataset_cache/canary/secret_prompts_test_prompt_False_persona_GPT2.npz"
     canaries = read_canaries_jsonl(canary_file)
     
-    tokenizer = AutoTokenizer.from_pretrained(model_name1, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(model_name1)
     tokenizer.pad_token = tokenizer.eos_token
     model1 = AutoModelForCausalLM.from_pretrained(model_name1).to(device)
     model2 = AutoModelForCausalLM.from_pretrained(model_name2).to(device)
